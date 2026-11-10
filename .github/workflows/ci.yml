@@ -1,0 +1,155 @@
+# CI для SUT B (варіант 01): build -> unit tests -> integration tests + API tests.
+# Запускається автоматично при push і pull request. Жоден етап не "глушиться":
+# якщо тест падає, job і весь pipeline стають червоними (failed).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # sut-b лежить у корені репозиторію. Якщо проєкт у підпапці (наприклад, "group 4/variant01/sut-b"),
+    # вкажіть її тут і в полях `path:` у кроках upload-artifact нижче.
+    working-directory: .
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Build (syntax check, module graph, dist/)
+        run: npm run build
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      REPORT_NAME: unit
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Run unit tests
+        run: npm run test:unit
+      # if: always() - звіт зберігається і коли тести впали, але статус job від цього не змінюється (лишається failed)
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-report
+          path: reports/
+          if-no-files-found: warn
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      REPORT_NAME: integration
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: store_variant01_test
+      DB_USER: store_student
+      DB_PASSWORD: ci_password
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: store_student
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: store_variant01_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U store_student -d store_variant01_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Apply DB migrations
+        run: npm run db:migrate
+      - name: Run integration tests
+        run: npm run test:integration
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-test-report
+          path: reports/
+          if-no-files-found: warn
+
+  api-tests:
+    name: API tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      REPORT_NAME: api
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: store_variant01_test
+      DB_USER: store_student
+      DB_PASSWORD: ci_password
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: store_student
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: store_variant01_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U store_student -d store_variant01_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+      - name: Apply DB migrations
+        run: npm run db:migrate
+      - name: Run API tests
+        run: npm run test:api
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-test-report
+          path: reports/
+          if-no-files-found: warn
