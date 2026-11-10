@@ -14,7 +14,7 @@ class OrderService {
         integer(unitPrice,100,1000000,"Ціна"); integer(quantity,1,20,"Кількість");
         if (typeof premium !== "boolean") throw new TypeError("Некоректна ознака преміальності");
         const subtotal = unitPrice * quantity;
-        const discount = subtotal >= 100000 ? 17 : 0;
+        const discount = subtotal >= 100000 ? 18 : 0;
         return subtotal - Math.floor(subtotal * discount / 100);
     }
     async placeOrder(request) {
